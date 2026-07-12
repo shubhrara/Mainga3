@@ -203,57 +203,66 @@ def coerce(value, typ):
         if t == "integer":
             return int(round(float(str(value).replace(",", ""))))
 
-        elif t in ("float", "number"):
+        if t in ("float", "number"):
             return float(str(value).replace(",", ""))
 
-        elif t == "boolean":
+        if t == "boolean":
             if isinstance(value, bool):
                 return value
             return str(value).strip().lower() in (
-                "true", "yes", "1", "y"
+                "true", "1", "yes", "y"
             )
 
-        elif t == "date":
+        if t == "date":
             return str(value).strip()
 
-        elif t.startswith("array"):
-            if isinstance(value, list):
-                return value
-            return [value]
+        if t == "array[integer]":
+            if not isinstance(value, list):
+                value = [value]
+            return [
+                int(round(float(str(v).replace(",", ""))))
+                for v in value
+            ]
 
-        else:
-            return str(value).strip()
+        if t.startswith("array"):
+            if not isinstance(value, list):
+                value = [value]
+            return [str(v).strip() for v in value]
+
+        return str(value).strip()
 
     except Exception:
         return None
 
+
 @app.post("/dynamic-extract")
-def dynamic_extract(req: DynamicExtractRequest):
+async def dynamic_extract(req: DynamicExtractRequest):
 
     try:
 
         prompt = f"""
-Extract information from the text.
+Extract variables from the text.
 
-Return ONLY JSON.
+Return ONLY valid JSON.
 
-Schema
+The JSON MUST contain EXACTLY these keys:
 
 {json.dumps(req.schema, indent=2)}
 
 Rules
 
-- Output EXACTLY these keys.
+- Return every key.
 - Missing values -> null.
-- Integer -> JSON integer.
-- Float -> JSON number.
-- Boolean -> true/false.
-- Dates -> YYYY-MM-DD.
-- Arrays -> JSON arrays.
+- integer -> JSON integer
+- float -> JSON number
+- boolean -> true or false
+- date -> YYYY-MM-DD
+- array[...] -> JSON array
 - No markdown.
 - No explanation.
+- No extra keys.
 
-Text
+TEXT
 
 {req.text}
 """
@@ -268,12 +277,15 @@ Text
 
         result = clean_json(response.text)
 
-        return {
-            key: coerce(result.get(key), req.schema[key])
-            for key in req.schema
-        }
+        output = {}
+
+        for key, typ in req.schema.items():
+            output[key] = coerce(result.get(key), typ)
+
+        return output
 
     except Exception as e:
+        print("dynamic_extract error:", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 # ===========================
