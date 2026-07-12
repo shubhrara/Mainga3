@@ -357,46 +357,51 @@ If text:
 # Q2
 # /rank
 # ===========================
-
 @app.post("/rank")
 async def rank(req: RankRequest):
 
-    query = req.query
-    candidates = req.candidates
+    try:
 
-    async with httpx.AsyncClient(timeout=90) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
 
-        response = await client.post(
-            "https://aipipe.org/openai/v1/embeddings",
-            headers=HEAD,
-            json={
-                "model": "text-embedding-3-small",
-                "input": [query] + candidates
-            }
+            response = await client.post(
+                "https://aipipe.org/openai/v1/embeddings",
+                headers={
+                    "Authorization": f"Bearer {config.AIPIPE_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "text-embedding-3-small",
+                    "input": [req.query] + req.candidates
+                }
+            )
+
+            print(response.status_code)
+            print(response.text)
+
+            response.raise_for_status()
+
+            vectors = [d["embedding"] for d in response.json()["data"]]
+
+        q = vectors[0]
+        docs = vectors[1:]
+
+        def cosine(a, b):
+            dot = sum(x * y for x, y in zip(a, b))
+            na = math.sqrt(sum(x * x for x in a))
+            nb = math.sqrt(sum(x * x for x in b))
+            return dot / (na * nb)
+
+        ranking = sorted(
+            range(len(docs)),
+            key=lambda i: -cosine(q, docs[i])
         )
 
-        response.raise_for_status()
+        return {"ranking": ranking[:3]}
 
-        vectors = [d["embedding"] for d in response.json()["data"]]
-
-    q = vectors[0]
-    docs = vectors[1:]
-
-    def cosine(a, b):
-        dot = sum(x * y for x, y in zip(a, b))
-        na = math.sqrt(sum(x * x for x in a))
-        nb = math.sqrt(sum(x * x for x in b))
-        return dot / (na * nb)
-
-    ranking = sorted(
-        range(len(docs)),
-        key=lambda i: -cosine(q, docs[i])
-    )
-
-    return {
-        "ranking": ranking[:3]
-    }
-
+    except Exception as e:
+        print("RANK ERROR:", repr(e))
+        raise HTTPException(status_code=500, detail=str(e))
 # ===========================
 # Q2
 # solve
