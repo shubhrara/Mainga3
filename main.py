@@ -15,8 +15,8 @@ import config
 # CONFIG
 # ===========================
 
-EMAIL = "26ds1000002@ds.study.iitm.ac.in"
 
+EMAIL = config.EMAIL
 
 client = genai.Client(api_key=config.GEMINI_API_KEY)
 MODEL = "gemini-3.5-flash"

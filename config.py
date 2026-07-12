@@ -1,4 +1,4 @@
-EMAIL = "26100000@ds.study.iitm.ac.in"
+EMAIL = "26ds1000002@ds.study.iitm.ac.in"
 
 import os
 
