@@ -5,6 +5,7 @@ from google import genai
 import json, math
 import base64
 import re, hashlib
+from datetime import datetime
 
 from statistics import mean, median, pstdev, pvariance, mode
 from fastapi.responses import JSONResponse
@@ -93,10 +94,57 @@ def root():
 # Q7
 # /extract
 # ===========================
-
 @app.post("/extract")
-def extract(req: ExtractRequest):
+async def extract(request: Request):
     try:
+        body = await request.json()
+
+        # ---------- Q3 ----------
+        if "invoice_text" in body:
+
+            prompt = f"""
+Extract the following fields from this invoice.
+
+Return ONLY valid JSON.
+
+Required keys:
+
+{{
+    "invoice_no": "...",
+    "date": "...",
+    "vendor": "...",
+    "amount": null,
+    "tax": null,
+    "currency": "..."
+}}
+
+Rules
+
+- Always return all six keys.
+- Missing values -> null.
+- date -> YYYY-MM-DD
+- amount = subtotal before tax.
+- tax = tax amount only.
+- currency = ISO4217 code.
+- No markdown.
+- No explanation.
+
+Invoice
+
+{body["invoice_text"]}
+"""
+
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json"
+                }
+            )
+
+            return clean_json(response.text)
+
+        # ---------- Q7 ----------
 
         prompt = f"""
 You are an information extraction system.
@@ -107,7 +155,7 @@ Return ONLY valid JSON.
 
 The output MUST exactly follow this JSON Schema:
 
-{json.dumps(req.schema, indent=2)}
+{json.dumps(body["schema"], indent=2)}
 
 Rules
 
@@ -125,7 +173,7 @@ Rules
 
 Document
 
-{req.text}
+{body["text"]}
 """
 
         response = client.models.generate_content(
@@ -139,8 +187,7 @@ Document
         return clean_json(response.text)
 
     except Exception as e:
-        raise HTTPException(500, str(e))
-
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===========================
 # Q4
