@@ -193,6 +193,39 @@ Document
 # Q4
 # /dynamic-extract
 # ===========================
+def coerce(value, typ):
+    if value is None:
+        return None
+
+    t = str(typ).lower().strip()
+
+    try:
+        if t == "integer":
+            return int(round(float(str(value).replace(",", ""))))
+
+        elif t in ("float", "number"):
+            return float(str(value).replace(",", ""))
+
+        elif t == "boolean":
+            if isinstance(value, bool):
+                return value
+            return str(value).strip().lower() in (
+                "true", "yes", "1", "y"
+            )
+
+        elif t == "date":
+            return str(value).strip()
+
+        elif t.startswith("array"):
+            if isinstance(value, list):
+                return value
+            return [value]
+
+        else:
+            return str(value).strip()
+
+    except Exception:
+        return None
 
 @app.post("/dynamic-extract")
 def dynamic_extract(req: DynamicExtractRequest):
@@ -233,11 +266,15 @@ Text
             }
         )
 
-        return clean_json(response.text)
+        result = clean_json(response.text)
+
+        return {
+            key: coerce(result.get(key), req.schema[key])
+            for key in req.schema
+        }
 
     except Exception as e:
-        raise HTTPException(500, str(e))
-
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===========================
 # Q2
