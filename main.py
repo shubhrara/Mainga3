@@ -70,23 +70,27 @@ class SolveRequest(BaseModel):
 def clean_json(text: str):
     text = text.strip()
 
-    # Remove markdown fences
-    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r"```$", "", text).strip()
+    # Remove markdown code fences if present
+    if text.startswith("```"):
+        text = re.sub(r"^```json\s*", "", text)
+        text = re.sub(r"^```\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
 
-    # Try direct parse
+    # Extract only the JSON object
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start != -1 and end != -1:
+        text = text[start:end + 1]
+
     try:
         return json.loads(text)
-    except Exception:
-        pass
 
-    # Extract first JSON object if extra text exists
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-
-    if match:
-        return json.loads(match.group())
-
-    raise ValueError("No valid JSON found in Gemini response")
+    except json.JSONDecodeError as e:
+        print("========== RAW GEMINI RESPONSE ==========")
+        print(text)
+        print("=========================================")
+        raise e
 
 
 # ===========================
@@ -361,6 +365,7 @@ def answer_image(req: ImageRequest):
         #raise HTTPException(500, str(e))
         print("ANSWER IMAGE ERROR:", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
+        
     
 
 #rank endpoint
