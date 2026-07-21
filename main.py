@@ -70,12 +70,23 @@ class SolveRequest(BaseModel):
 def clean_json(text: str):
     text = text.strip()
 
-    if text.startswith("```"):
-        text = re.sub(r"^```json", "", text)
-        text = re.sub(r"^```", "", text)
-        text = re.sub(r"```$", "", text)
+    # Remove markdown fences
+    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"```$", "", text).strip()
 
-    return json.loads(text.strip())
+    # Try direct parse
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Extract first JSON object if extra text exists
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+
+    if match:
+        return json.loads(match.group())
+
+    raise ValueError("No valid JSON found in Gemini response")
 
 
 # ===========================
@@ -149,29 +160,33 @@ Invoice
         prompt = f"""
 You are an information extraction system.
 
-Extract information from the invoice.
+Extract information from the document.
 
 Return ONLY valid JSON.
 
-The output MUST exactly follow this JSON Schema:
+The output MUST exactly match this JSON Schema:
 
 {json.dumps(body["schema"], indent=2)}
 
-Rules
-
+Rules:
+- Return ONLY valid JSON.
 - No markdown.
 - No explanation.
 - No extra keys.
-- Missing values -> null.
-- Dates -> YYYY-MM-DD.
-- Currency -> ISO4217.
-- Emails lowercase.
-- Preserve array order.
-- Convert textual numbers to numeric.
-- Convert Indian numbering correctly.
-- item_count must equal number of line items.
+- Return every schema key.
+- Missing values must be null.
+- Dates must be ISO format YYYY-MM-DD.
+- Currency must be ISO 4217 codes (USD, EUR, GBP, INR, JPY).
+- Convert numbers written in words into numbers.
+- Convert values like 12K or 5M into full numeric values.
+- Correctly interpret Indian number formatting (e.g. 1,24,800).
+- Convert due periods into integer days (e.g. two weeks -> 14).
+- Emails must be lowercase.
+- Preserve array order exactly.
+- JSON numbers must NOT be strings.
+- JSON booleans must NOT be strings.
 
-Document
+Document:
 
 {body["text"]}
 """
@@ -298,33 +313,25 @@ def answer_image(req: ImageRequest):
 
     try:
 
-        prompt = [
-            {
+        prompt = [    {
                 "text": f"""
-Answer the question using ONLY the image.
+        Answer the question using ONLY the image.
 
-Question:
+        Question:
+        {req.question}
 
-{req.question}
-
-Rules
-
-Return ONLY JSON.
-
-Format
-
-{{
-    "answer":"..."
-}}
-
-If numeric:
-- no commas
-- no currency symbol
-- no units
-
-If text:
-- copy exactly from image.
-"""
+        Rules:
+        - Return ONLY valid JSON.
+        - Format exactly:
+        {{
+        "answer": "..."
+        }}
+        - Do not explain your reasoning.
+        - Do not add extra keys.
+        - If the answer is numeric, return only the number as a string.
+        - Do not include commas, currency symbols, units, or extra words.
+        - If the answer is text, copy it exactly as it appears in the image.
+        """
             },
             {
                 "inline_data": {
@@ -354,7 +361,7 @@ If text:
 
 #rank endpoint
 # ===========================
-# Q2
+# 
 # /rank
 # ===========================
 @app.post("/rank")
@@ -407,47 +414,58 @@ async def rank(req: RankRequest):
 # solve
 # ===========================
 
+
 @app.post("/solve")
 async def solve(req: SolveRequest):
 
     problem = req.problem
 
-
     prompt = f"""
 Solve the arithmetic word problem.
 
-Return ONLY JSON.
+Return ONLY valid JSON.
 
 Format
 
 {{
-    "reasoning":"...",
-    "answer":123
+    "reasoning": "...",
+    "answer": 123
 }}
 
 Rules
 
-- Ignore distractor numbers.
-- Answer must be integer.
-- Reasoning should explain the steps.
+- Return EXACTLY two keys: reasoning and answer.
+- No markdown.
+- No explanation outside the JSON.
+- Reasoning must be at least 80 characters long.
+- Show the calculation steps clearly.
+- Ignore irrelevant or distractor numbers.
+- Answer must be a JSON integer (not a string and not a float).
+- No currency symbols or units in the answer.
 
 Problem
 
 {problem}
 """
 
-    response = client.models.generate_content(
+    try:
 
-        model=MODEL,
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json"
+            }
+        )
 
-        contents=prompt,
+        result = clean_json(response.text)
 
-        config={
-            "response_mime_type": "application/json"
+        result = {
+            "reasoning": str(result.get("reasoning", "")).strip(),
+            "answer": int(result.get("answer"))
         }
 
-    )
+        return result
 
-    result = clean_json(response.text)
-
-    return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
