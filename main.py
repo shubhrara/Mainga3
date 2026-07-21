@@ -202,6 +202,8 @@ Document:
         return clean_json(response.text)
 
     except Exception as e:
+        #raise HTTPException(status_code=500, detail=str(e))
+        print("EXTRACT ERROR:", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 # ===========================
@@ -356,7 +358,9 @@ def answer_image(req: ImageRequest):
         }
 
     except Exception as e:
-        raise HTTPException(500, str(e))
+        #raise HTTPException(500, str(e))
+        print("ANSWER IMAGE ERROR:", repr(e))
+        raise HTTPException(status_code=500, detail=str(e))
     
 
 #rank endpoint
