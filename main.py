@@ -19,7 +19,13 @@ import config
 
 EMAIL = config.EMAIL
 
-client = genai.Client(api_key=config.GEMINI_API_KEY)
+key = config.GEMINI_API_KEY
+print("Gemini key loaded:", key is not None)
+print("Key ending:", key[-6:] if key else "None")
+
+client = genai.Client(api_key=key)
+
+
 MODEL = "gemini-3.5-flash"
 
 # ===========================
